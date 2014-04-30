@@ -1,4 +1,5 @@
 .rvmrc
+.ruby-version
 .DS_Store
 .yardoc
 doc
