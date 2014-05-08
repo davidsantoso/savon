@@ -86,7 +86,8 @@ describe "Options" do
       expect { client.call(:authenticate) }.to raise_error { |error|
         host_unreachable = error.kind_of? Errno::EHOSTUNREACH
         net_unreachable = error.kind_of? Errno::ENETUNREACH
-        if host_unreachable || net_unreachable
+        socket_err = error.kind_of? SocketError
+        if host_unreachable || net_unreachable || socket_err
           warn "Warning: looks like your network may be down?!\n" +
                "-> skipping spec at #{__FILE__}:#{__LINE__}"
         else
@@ -618,6 +619,39 @@ describe "Options" do
       end
 
       expect(response.body[:get_agent_listen_address_response][:return][:item].first[:ipport][:address]).to eq({:"@s:type"=>"y:string"})
+    end
+  end
+
+  context 'global: :adapter' do
+    it 'passes option to Wasabi initializer for WSDL fetching' do
+      ## I want to use there something similar to the next mock expectation, but I can't
+      ## as due to how Savon sets up Wasabi::Document and Wasabi::Document initialize itself
+      ## adapter= method is called first time with nil and second time with adapter. [Envek, 2014-05-03]
+      # Wasabi::Document.any_instance.expects(:adapter=).with(:fake_adapter_for_test)
+      client = Savon.client(
+          :log => false,
+          :wsdl => @server.url(:authentication),
+          :adapter => :fake_adapter_for_test,
+      )
+      operations = client.operations
+      expect(operations).to eq([:authenticate])
+      expect(FakeAdapterForTest.class_variable_get(:@@requests).size).to eq(1)
+      expect(FakeAdapterForTest.class_variable_get(:@@requests).first.url).to eq(URI.parse(@server.url(:authentication)))
+      expect(FakeAdapterForTest.class_variable_get(:@@methods)).to eq([:get])
+    end
+
+    it 'instructs HTTPI to use provided adapter for performing SOAP requests' do
+      client = new_client_without_wsdl(
+          :endpoint => @server.url(:repeat),
+          :namespace => "http://v1.example.com",
+          :adapter => :adapter_for_test,
+      )
+      response = client.call(:authenticate)
+      expect(response.http.body).to include('xmlns:wsdl="http://v1.example.com"')
+      expect(response.http.body).to include('<wsdl:authenticate>')
+      expect(AdapterForTest.class_variable_get(:@@requests).size).to eq(1)
+      expect(AdapterForTest.class_variable_get(:@@requests).first.url).to eq(URI.parse(@server.url(:repeat)))
+      expect(AdapterForTest.class_variable_get(:@@methods)).to eq([:post])
     end
   end
 
